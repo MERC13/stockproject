@@ -1,2 +1,4 @@
 /stock_cache
 /__pycache__
+*.joblib
+*.h5

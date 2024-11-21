@@ -1,34 +1,25 @@
 '''
-Dynamic Charts: Allow users to interact with stock price charts, zoom in on specific time periods,
-and view detailed data points.
-
-Heatmaps: Use heatmaps to show market trends and highlight significant changes in stock prices.
-
-Risk Assessment: Provide tools for users to assess the risk of their portfolios and suggest ways to
-diversify and mitigate risk.
-
-Performance Tracking: Allow users to track the performance of their portfolios over time and compare
-it to market benchmarks.
-
+Data Caching
+Heatmaps
+Risk Assessment
 LLM to suggest portfolio
-
-anomaly detection
 '''
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, mean_absolute_error
-from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+from sklearn.metrics import mean_squared_error
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.layers import Dense, LSTM, Input, Multiply, Dropout, Bidirectional, LayerNormalization
 from tensorflow.keras.regularizers import l2
-from tensorflow.keras.wrappers.scikit_learn import KerasRegressor
+from scikeras.wrappers import KerasRegressor
+from sklearn.model_selection import train_test_split
 from dataprocessing import dataprocessing
 import tensorflow as tf
 from scipy.stats import randint, uniform
 import joblib
 import os
-
+from skopt import BayesSearchCV
+from skopt.space import Real, Integer
 
 
 
@@ -51,22 +42,54 @@ def load_model_and_params(model_filename, params_filename):
 
 
 
-def time_series_cv(model, X, y, n_splits=5):
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-    mape_scores = []
-    mae_scores = []
-    
-    for train_index, test_index in tscv.split(X):
-        X_train, X_test = X[train_index], X[test_index]
-        y_train, y_test = y[train_index], y[test_index]
-        
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        
-        mape_scores.append(mean_absolute_percentage_error(y_test, y_pred))
-        mae_scores.append(mean_absolute_error(y_test, y_pred))
-    
-    return np.mean(mape_scores), np.mean(mae_scores)
+from scikeras.wrappers import KerasRegressor
+from sklearn.model_selection import train_test_split
+
+# ... (other imports remain the same)
+
+def bayesian_hyperparameter_tuning(x_train, y_train, x_val, y_val):
+    # Define the search space
+    search_spaces = {
+        'model__units': Integer(32, 256),
+        'model__learning_rate': Real(1e-4, 1e-1, prior='log-uniform'),
+        'model__dropout_rate': Real(0.1, 0.5),
+        'model__l2_reg': Real(1e-6, 1e-2, prior='log-uniform'),
+    }
+
+    # Create a custom scoring function that uses the validation set
+    def custom_scorer(estimator, X, y):
+        y_pred = estimator.predict(x_val)
+        return -mean_squared_error(y_val, y_pred)
+
+    # Create the KerasRegressor
+    model = KerasRegressor(
+        model=create_model,
+        loss='mean_squared_error',
+        optimizer='adam',
+        metrics=['mse'],
+        verbose=0
+    )
+
+    # Create the BayesSearchCV object
+    bayes_search = BayesSearchCV(
+        estimator=model,
+        search_spaces=search_spaces,
+        n_iter=50,  # Number of parameter settings that are sampled
+        cv=[(slice(None), slice(None))],  # Use all training data
+        n_jobs=-1,  # Use all available cores
+        verbose=1,
+        scoring=custom_scorer,
+        random_state=42
+    )
+
+    # Fit the BayesSearchCV object to the data
+    bayes_search.fit(x_train, y_train)
+
+    # Print the best parameters and score
+    print("Best parameters found: ", bayes_search.best_params_)
+    print("Best validation MSE: ", -bayes_search.best_score_)
+
+    return bayes_search.best_params_
 
 
 
@@ -162,37 +185,28 @@ if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
     print("Loading existing model and parameters...")
     best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
 else:
-    print("No existing model found. Running RandomizedSearchCV...")
-    param_distributions = {
-        'units': randint(32, 256),
-        'learning_rate': uniform(0.0001, 0.1),
-        'epochs': randint(50, 300),
-        'dropout_rate': uniform(0.1, 0.5),
-        'l2_reg': uniform(0.0001, 0.1)
-    }
+    print("No existing model found. Running Bayesian hyperparameter tuning...")
 
-    random_search = RandomizedSearchCV(estimator=model, param_distributions=param_distributions, 
-                                       n_iter=20, cv=TimeSeriesSplit(n_splits=5), 
-                                       verbose=2, n_jobs=-1, scoring='neg_mean_absolute_error')
+    x_train_tune, x_val, y_train_tune, y_val = train_test_split(
+    x_train[tech_list[0]], y_train[tech_list[0]], test_size=0.2, random_state=42
+    )
+
+    best_params = bayesian_hyperparameter_tuning(x_train_tune, y_train_tune, x_val, y_val)
+
+    # Update the create_model call
+    best_model = create_model(units=best_params['model__units'],
+                            learning_rate=best_params['model__learning_rate'],
+                            dropout_rate=best_params['model__dropout_rate'],
+                            l2_reg=best_params['model__l2_reg'])
     
-    random_search_result = random_search.fit(x_train[tech_list[0]], y_train[tech_list[0]])
-
-    print("Best: %f using %s" % (random_search_result.best_score_, random_search_result.best_params_))
-
-    best_model = create_model(units=random_search_result.best_params_['units'],
-                              learning_rate=random_search_result.best_params_['learning_rate'],
-                              dropout_rate=random_search_result.best_params_['dropout_rate'],
-                              l2_reg=random_search_result.best_params_['l2_reg'])
-
-    save_model_and_params(best_model, random_search_result.best_params_, MODEL_FILE, PARAMS_FILE)
-    best_params = random_search_result.best_params_
+    save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
 
 early_stop = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)
 
 for stock in tech_list:
     history = best_model.fit(x_train[stock], y_train[stock], 
                              batch_size=64, 
-                             epochs=best_params['epochs'], 
+                             epochs=100, 
                              validation_data=(x_test[stock], y_test[stock]),  # Use test data for validation
                              callbacks=[early_stop], 
                              verbose=1)

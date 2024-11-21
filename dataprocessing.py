@@ -23,7 +23,7 @@ def add_technical_indicators(df):
 
 def dataprocessing(tech_list):
     end = datetime.now()
-    start = end - timedelta(days=365*2)  # Get 2 years of data
+    start = end - timedelta(days=365*5)  # Get 2 years of data
 
     stock_data = {}
     for stock in tech_list:
@@ -57,8 +57,10 @@ def dataprocessing(tech_list):
             x_temp.append(scaled_data[i-sequence_length:i])
             y_temp.append(scaled_data[i, 3])  # Predicting the Close price
         
-        x_train[stock] = np.array(x_temp)
-        y_train[stock] = np.array(y_temp)
+        x_temp = np.array(x_temp)
+        y_temp = np.array(y_temp)
+        x_train[stock] = x_temp
+        y_train[stock] = y_temp
         
         x_train[stock], x_test[stock], y_train[stock], y_test[stock] = train_test_split(
             x_temp, y_temp, test_size=0.2, random_state=42, shuffle=False
