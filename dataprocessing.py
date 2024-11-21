@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import yfinance as yf
 
@@ -23,7 +23,7 @@ def add_technical_indicators(df):
 
 def dataprocessing(tech_list):
     end = datetime.now()
-    start = end - timedelta(days=365*5)  # Get 2 years of data
+    start = end - timedelta(days=365*10)
 
     stock_data = {}
     for stock in tech_list:
@@ -32,7 +32,7 @@ def dataprocessing(tech_list):
         df = add_technical_indicators(df)
         stock_data[stock] = df.dropna()  # Remove any rows with NaN values
     
-    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler = StandardScaler()
     data = {}
     x_train = {}
     y_train = {}
@@ -59,8 +59,6 @@ def dataprocessing(tech_list):
         
         x_temp = np.array(x_temp)
         y_temp = np.array(y_temp)
-        x_train[stock] = x_temp
-        y_train[stock] = y_temp
         
         x_train[stock], x_test[stock], y_train[stock], y_test[stock] = train_test_split(
             x_temp, y_temp, test_size=0.2, random_state=42, shuffle=False

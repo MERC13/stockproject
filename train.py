@@ -15,7 +15,6 @@ from scikeras.wrappers import KerasRegressor
 from sklearn.model_selection import train_test_split
 from dataprocessing import dataprocessing
 import tensorflow as tf
-from scipy.stats import randint, uniform
 import joblib
 import os
 from skopt import BayesSearchCV
@@ -42,18 +41,14 @@ def load_model_and_params(model_filename, params_filename):
 
 
 
-from scikeras.wrappers import KerasRegressor
-from sklearn.model_selection import train_test_split
-
-# ... (other imports remain the same)
 
 def bayesian_hyperparameter_tuning(x_train, y_train, x_val, y_val):
     # Define the search space
     search_spaces = {
-        'model__units': Integer(32, 256),
-        'model__learning_rate': Real(1e-4, 1e-1, prior='log-uniform'),
+        'model__units': Integer(32, 128),
+        'model__learning_rate': Real(1e-4, 1e-2, prior='log-uniform'),
         'model__dropout_rate': Real(0.1, 0.5),
-        'model__l2_reg': Real(1e-6, 1e-2, prior='log-uniform'),
+        'model__l2_reg': Real(1e-6, 1e-3, prior='log-uniform'),
     }
 
     # Create a custom scoring function that uses the validation set
@@ -95,7 +90,7 @@ def bayesian_hyperparameter_tuning(x_train, y_train, x_val, y_val):
 
 
 
-def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+def create_complex_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
     inputs = Input(shape=(shape[0], shape[1]))
     
     # First LSTM layer with L2 regularization
@@ -126,6 +121,67 @@ def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
                   loss='mean_squared_error')
     return model
 
+
+
+
+
+def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+    inputs = Input(shape=(shape[0], shape[1]))
+    
+    x = LSTM(units, return_sequences=True, 
+             kernel_regularizer=l2(l2_reg), 
+             recurrent_regularizer=l2(l2_reg))(inputs)
+    x = LayerNormalization()(x)
+    x = Dropout(dropout_rate)(x)
+    
+    x = LSTM(units // 2, 
+             kernel_regularizer=l2(l2_reg), 
+             recurrent_regularizer=l2(l2_reg))(x)
+    x = LayerNormalization()(x)
+    x = Dropout(dropout_rate)(x)
+    
+    outputs = Dense(1, kernel_regularizer=l2(l2_reg))(x)
+    
+    model = Model(inputs=inputs, outputs=outputs)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
+                  loss='mean_squared_error')
+    return model
+
+
+
+
+
+def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False):
+    if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
+        print("Loading existing model and parameters...")
+        best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
+    elif bayesian:
+        print("No existing model found. Running Bayesian hyperparameter tuning...")
+        x_train_tune, x_val, y_train_tune, y_val = train_test_split(
+            x_train[tech_list[0]], y_train[tech_list[0]], test_size=0.2, random_state=42
+        )
+        best_params = bayesian_hyperparameter_tuning(x_train_tune, y_train_tune, x_val, y_val)
+        best_model = create_model(units=best_params['model__units'],
+                                  learning_rate=best_params['model__learning_rate'],
+                                  dropout_rate=best_params['model__dropout_rate'],
+                                  l2_reg=best_params['model__l2_reg'])
+        save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
+    else:
+        default_params = {
+            'units': 64,
+            'learning_rate': 0.001,
+            'dropout_rate': 0.2,
+            'l2_reg': 0.01
+        }
+        print("No existing model found. Using default parameters...")
+        best_params = default_params
+        best_model = create_model(units=best_params['units'],
+                                  learning_rate=best_params['learning_rate'],
+                                  dropout_rate=best_params['dropout_rate'],
+                                  l2_reg=best_params['l2_reg'])
+        save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
+    
+    return best_model, best_params
 
 
 
@@ -166,40 +222,25 @@ def plot_learning_curves(history, stock):
     
     
 
+
+
+
+
+
+
+
 # data processing
 tech_list = ['AAPL']  # 'GOOG', 'MSFT', 'AMZN'
 x_train, y_train, x_test, y_test, shape, scaler = dataprocessing(tech_list)
-
-
-
-
-
 
 # model building
 model = KerasRegressor(build_fn=create_model, verbose=0)
 
 MODEL_FILE = 'best_stock_model.h5'
 PARAMS_FILE = 'best_model_params.joblib'
+bayesian = False
 
-if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
-    print("Loading existing model and parameters...")
-    best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
-else:
-    print("No existing model found. Running Bayesian hyperparameter tuning...")
-
-    x_train_tune, x_val, y_train_tune, y_val = train_test_split(
-    x_train[tech_list[0]], y_train[tech_list[0]], test_size=0.2, random_state=42
-    )
-
-    best_params = bayesian_hyperparameter_tuning(x_train_tune, y_train_tune, x_val, y_val)
-
-    # Update the create_model call
-    best_model = create_model(units=best_params['model__units'],
-                            learning_rate=best_params['model__learning_rate'],
-                            dropout_rate=best_params['model__dropout_rate'],
-                            l2_reg=best_params['model__l2_reg'])
-    
-    save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
+best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian)
 
 early_stop = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)
 
@@ -207,14 +248,9 @@ for stock in tech_list:
     history = best_model.fit(x_train[stock], y_train[stock], 
                              batch_size=64, 
                              epochs=100, 
-                             validation_data=(x_test[stock], y_test[stock]),  # Use test data for validation
+                             validation_data=(x_test[stock], y_test[stock]),
                              callbacks=[early_stop], 
                              verbose=1)
-    
-    
-    
-    
-    
     
     # plotting
     plot_learning_curves(history, stock)
@@ -240,11 +276,6 @@ for stock in tech_list:
 
     print(f'Train RMSE for {stock}: {train_rmse:.2f}')
     print(f'Test RMSE for {stock}: {test_rmse:.2f}')
-
-
-
-
-
 
 # Save model
 best_model.save(MODEL_FILE)
