@@ -128,23 +128,44 @@ def create_complex_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg
 def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
     inputs = Input(shape=(shape[0], shape[1]))
     
-    x = LSTM(units, return_sequences=True, 
-             kernel_regularizer=l2(l2_reg), 
-             recurrent_regularizer=l2(l2_reg))(inputs)
+    # First LSTM layer with L2 regularization
+    x = Bidirectional(LSTM(units, return_sequences=True, 
+                           kernel_regularizer=l2(l2_reg), 
+                           recurrent_regularizer=l2(l2_reg)))(inputs)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
     
-    x = LSTM(units // 2, 
-             kernel_regularizer=l2(l2_reg), 
-             recurrent_regularizer=l2(l2_reg))(x)
+    # Second LSTM layer
+    x = Bidirectional(LSTM(units // 2, return_sequences=True, 
+                           kernel_regularizer=l2(l2_reg), 
+                           recurrent_regularizer=l2(l2_reg)))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
     
+    # Attention mechanism
+    attention = Dense(units // 2, activation='tanh', kernel_regularizer=l2(l2_reg))(x)
+    attention = Dense(1, activation='softmax', kernel_regularizer=l2(l2_reg))(attention)
+    context_vector = Multiply()([x, attention])
+    x = tf.reduce_sum(context_vector, axis=1)
+    
+    # Dense layers
+    x = Dense(units // 2, activation='relu', kernel_regularizer=l2(l2_reg))(x)
+    x = LayerNormalization()(x)
+    x = Dropout(dropout_rate)(x)
+    
+    x = Dense(units // 4, activation='relu', kernel_regularizer=l2(l2_reg))(x)
+    x = LayerNormalization()(x)
+    x = Dropout(dropout_rate)(x)
+    
+    # Output layer
     outputs = Dense(1, kernel_regularizer=l2(l2_reg))(x)
     
     model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
-                  loss='mean_squared_error')
+    
+    # Use AMSGrad variant of Adam optimizer
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, amsgrad=True)
+    
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
     return model
 
 
@@ -170,8 +191,8 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False):
         default_params = {
             'units': 64,
             'learning_rate': 0.001,
-            'dropout_rate': 0.2,
-            'l2_reg': 0.01
+            'dropout_rate': 0.4,
+            'l2_reg': 0.04
         }
         print("No existing model found. Using default parameters...")
         best_params = default_params
