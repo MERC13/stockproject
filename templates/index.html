@@ -8,9 +8,14 @@
 
   <body>
     <div class="grid">
-      <div class="box">
-        <p>Stock Analysis</p>
-        <img src="{{ url_for('static', filename='AAPL_test_prediction.png') }}" alt="AAPL Stock predictions" class="stock-predictions" style="max-width: 100%; height: auto;">
+      <h1>Stock Analysis</h1>
+      <div class="graph-container">
+        {% for graph in graphs %}
+        <div class="box">
+          <h2>{{ graph.title }}</h2>
+          <img src="{{ url_for('static', filename=graph.filename) }}" alt="{{ graph.title }} Stock predictions" class="stock-predictions">
+        </div>
+        {% endfor %}
       </div>
     </div>
   </body>
