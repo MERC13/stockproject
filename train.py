@@ -251,7 +251,7 @@ def plot_learning_curves(history, stock):
 
 
 # data processing
-tech_list = ['AAPL']  # 'GOOG', 'MSFT', 'AMZN'
+tech_list = ['AAPL', 'GOOG']  #'MSFT', 'AMZN'
 x_train, y_train, x_test, y_test, shape, scaler = dataprocessing(tech_list)
 
 # model building
