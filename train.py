@@ -19,6 +19,7 @@ import joblib
 import os
 from skopt import BayesSearchCV
 from skopt.space import Real, Integer
+from scipy.interpolate import interp1d
 
 
 
@@ -125,7 +126,7 @@ def create_complex_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg
 
 
 
-def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.05):
     inputs = Input(shape=(shape[0], shape[1]))
     
     # First LSTM layer with L2 regularization
@@ -192,7 +193,7 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False):
             'units': 64,
             'learning_rate': 0.001,
             'dropout_rate': 0.4,
-            'l2_reg': 0.04
+            'l2_reg': 0.1
         }
         print("No existing model found. Using default parameters...")
         best_params = default_params
@@ -251,7 +252,7 @@ def plot_learning_curves(history, stock):
 
 
 # data processing
-tech_list = ['AAPL', 'GOOG']  #'MSFT', 'AMZN'
+tech_list = ['AAPL']  #'MSFT', 'AMZN'
 x_train, y_train, x_test, y_test, shape, scaler = dataprocessing(tech_list)
 
 # model building
@@ -263,7 +264,7 @@ bayesian = False
 
 best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian)
 
-early_stop = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)
+early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
 
 for stock in tech_list:
     history = best_model.fit(x_train[stock], y_train[stock], 

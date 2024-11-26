@@ -1,22 +1,42 @@
 <!DOCTYPE html>
-<html>
-  <head>
+<html lang="en">
+<head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Analysis Model</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  </head>
-
-  <body>
-    <div class="grid">
-      <h1>Stock Analysis</h1>
-      <div class="graph-container">
-        {% for graph in graphs %}
-        <div class="box">
-          <h2>{{ graph.title }}</h2>
-          <img src="{{ url_for('static', filename=graph.filename) }}" alt="{{ graph.title }} Stock predictions" class="stock-predictions">
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-  </body>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Stock Analysis and Prediction</h1>
+    </header>
+    <main class="container">
+        <section class="model-input">
+            <h2>Enter Stock Details</h2>
+            <form id="stock-form">
+                <input type="text" id="stock-symbol" placeholder="Stock Symbol (e.g., AAPL)" required>
+                <input type="date" id="start-date" required>
+                <input type="date" id="end-date" required>
+                <button type="submit">Analyze</button>
+            </form>
+        </section>
+        <section class="results">
+            <h2>Analysis Results</h2>
+            <div id="prediction-result"></div>
+            <div class="graph-container">
+                {% for graph in graphs %}
+                <div class="box">
+                    <h3>{{ graph.title }}</h3>
+                    <canvas id="chart-{{ loop.index }}" width="400" height="200"></canvas>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2023 Stock Analysis Project. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
 </html>

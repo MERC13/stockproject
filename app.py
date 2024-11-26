@@ -1,6 +1,6 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
 from tensorflow.keras.models import load_model
-import os
+import numpy as np
 
 app = Flask(__name__)
 
@@ -8,19 +8,27 @@ model = load_model('best_stock_model.h5')
 
 @app.route("/")
 def home():
-    # Get all PNG files in the static folder
-    static_folder = os.path.join(app.root_path, 'static')
-    graph_files = [f for f in os.listdir(static_folder) if f.endswith('_test_prediction.png')]
-    
-    # Create a list of dictionaries containing information about each graph
     graphs = [
-        {
-            'title': f.split('_')[0],  # Assumes filename format is "STOCKSYMBOL_test_prediction.png"
-            'filename': f
-        } for f in graph_files
+        {"title": "Stock Price Prediction", "filename": "stock_prediction.png"},
+        {"title": "Stock Price History", "filename": "stock_history.png"}
     ]
-    
     return render_template("index.html", graphs=graphs)
+
+@app.route("/predict", methods=['POST'])
+def predict():
+    data = request.json
+    # Process the input data and use your model to make predictions
+    # This is a placeholder implementation
+    prediction = model.predict(np.array([[0, 0, 0, 0]]))  # Replace with actual input data
+    
+    # Generate chart data (placeholder)
+    chart_data = {
+        "labels": ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"],
+        "actual": [100, 102, 98, 103, 105],
+        "predicted": [101, 103, 99, 102, 104]
+    }
+    
+    return jsonify({"prediction": float(prediction[0][0]), "chartData": chart_data})
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
