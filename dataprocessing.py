@@ -23,7 +23,7 @@ def add_technical_indicators(df):
 
 def dataprocessing(tech_list):
     end = datetime.now()
-    start = end - timedelta(days=365*10)
+    start = end - timedelta(days=365*15)
 
     stock_data = {}
     for stock in tech_list:

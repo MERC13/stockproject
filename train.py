@@ -193,7 +193,7 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False):
             'units': 64,
             'learning_rate': 0.001,
             'dropout_rate': 0.4,
-            'l2_reg': 0.1
+            'l2_reg': 0.5
         }
         print("No existing model found. Using default parameters...")
         best_params = default_params
@@ -264,7 +264,7 @@ bayesian = False
 
 best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian)
 
-early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
+early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 
 for stock in tech_list:
     history = best_model.fit(x_train[stock], y_train[stock], 
