@@ -91,70 +91,60 @@ def bayesian_hyperparameter_tuning(x_train, y_train, x_val, y_val):
 
 
 
-def create_complex_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
+def create_multi_task_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
     inputs = Input(shape=(shape[0], shape[1]))
     
-    # First LSTM layer with L2 regularization
-    x = Bidirectional(LSTM(units, return_sequences=True, 
-                           kernel_regularizer=l2(l2_reg), 
-                           recurrent_regularizer=l2(l2_reg)))(inputs)
-    x = LayerNormalization()(x)
-    x = Dropout(dropout_rate)(x)
-    
-    # Second LSTM layer
-    x = Bidirectional(LSTM(units // 2, return_sequences=True, 
-                           kernel_regularizer=l2(l2_reg), 
-                           recurrent_regularizer=l2(l2_reg)))(x)
+    # Shared layers
+    x = LSTM(units, return_sequences=True, 
+             kernel_regularizer=l2(l2_reg), 
+             recurrent_regularizer=l2(l2_reg))(inputs)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
     
     # Attention mechanism
-    attention = Dense(units // 2, activation='tanh', kernel_regularizer=l2(l2_reg))(x)
-    attention = Dense(1, activation='softmax', kernel_regularizer=l2(l2_reg))(attention)
+    attention = Dense(1, activation='tanh', kernel_regularizer=l2(l2_reg))(x)
+    attention = tf.nn.softmax(attention, axis=1)
     context_vector = Multiply()([x, attention])
     x = tf.reduce_sum(context_vector, axis=1)
     
-    # Output layer
-    outputs = Dense(1, kernel_regularizer=l2(l2_reg))(x)
+    # Dense layer
+    x = Dense(units // 2, activation='relu', kernel_regularizer=l2(l2_reg))(x)
+    x = LayerNormalization()(x)
+    x = Dropout(dropout_rate)(x)
     
-    model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
-                  loss='mean_squared_error')
+    # Company-specific output layers
+    outputs = {}
+    for stock in tech_list:
+        outputs[stock] = Dense(1, name=f'output_{stock}', kernel_regularizer=l2(l2_reg))(x)
+    
+    model = Model(inputs=inputs, outputs=list(outputs.values()))
+    
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
     return model
 
 
 
 
-
-def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.05):
+def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.01):
     inputs = Input(shape=(shape[0], shape[1]))
     
-    # First LSTM layer with L2 regularization
-    x = Bidirectional(LSTM(units, return_sequences=True, 
-                           kernel_regularizer=l2(l2_reg), 
-                           recurrent_regularizer=l2(l2_reg)))(inputs)
-    x = LayerNormalization()(x)
-    x = Dropout(dropout_rate)(x)
-    
-    # Second LSTM layer
-    x = Bidirectional(LSTM(units // 2, return_sequences=True, 
-                           kernel_regularizer=l2(l2_reg), 
-                           recurrent_regularizer=l2(l2_reg)))(x)
+    # LSTM layer with L2 regularization
+    x = LSTM(units, return_sequences=True, 
+             kernel_regularizer=l2(l2_reg), 
+             recurrent_regularizer=l2(l2_reg))(inputs)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
     
     # Attention mechanism
-    attention = Dense(units // 2, activation='tanh', kernel_regularizer=l2(l2_reg))(x)
-    attention = Dense(1, activation='softmax', kernel_regularizer=l2(l2_reg))(attention)
+    attention = Dense(1, activation='tanh', kernel_regularizer=l2(l2_reg))(x)
+    attention = tf.nn.softmax(attention, axis=1)
     context_vector = Multiply()([x, attention])
     x = tf.reduce_sum(context_vector, axis=1)
     
-    # Dense layers
+    # Dense layer
     x = Dense(units // 2, activation='relu', kernel_regularizer=l2(l2_reg))(x)
-    x = LayerNormalization()(x)
-    x = Dropout(dropout_rate)(x)
-    
-    x = Dense(units // 4, activation='relu', kernel_regularizer=l2(l2_reg))(x)
     x = LayerNormalization()(x)
     x = Dropout(dropout_rate)(x)
     
@@ -163,8 +153,7 @@ def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.05):
     
     model = Model(inputs=inputs, outputs=outputs)
     
-    # Use AMSGrad variant of Adam optimizer
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, amsgrad=True)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     
     model.compile(optimizer=optimizer, loss='mean_squared_error')
     return model
@@ -173,7 +162,7 @@ def create_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_reg=0.05):
 
 
 
-def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False):
+def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False, multi_task=False):
     if os.path.exists(MODEL_FILE) and os.path.exists(PARAMS_FILE):
         print("Loading existing model and parameters...")
         best_model, best_params = load_model_and_params(MODEL_FILE, PARAMS_FILE)
@@ -183,24 +172,38 @@ def create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian=False):
             x_train[tech_list[0]], y_train[tech_list[0]], test_size=0.2, random_state=42
         )
         best_params = bayesian_hyperparameter_tuning(x_train_tune, y_train_tune, x_val, y_val)
-        best_model = create_model(units=best_params['model__units'],
+        if multi_task:
+            best_model = create_multi_task_model(units=best_params['units'],
+                                     learning_rate=best_params['learning_rate'],
+                                     dropout_rate=best_params['dropout_rate'],
+                                     l2_reg=best_params['l2_reg'])
+        else:
+            best_model = create_model(units=best_params['model__units'],
                                   learning_rate=best_params['model__learning_rate'],
                                   dropout_rate=best_params['model__dropout_rate'],
                                   l2_reg=best_params['model__l2_reg'])
+            
         save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
     else:
         default_params = {
             'units': 64,
-            'learning_rate': 0.001,
-            'dropout_rate': 0.4,
-            'l2_reg': 0.5
+            'learning_rate': 0.005,
+            'dropout_rate': 0.33,
+            'l2_reg': 0.25
         }
         print("No existing model found. Using default parameters...")
         best_params = default_params
-        best_model = create_model(units=best_params['units'],
-                                  learning_rate=best_params['learning_rate'],
-                                  dropout_rate=best_params['dropout_rate'],
-                                  l2_reg=best_params['l2_reg'])
+        if multi_task:
+            best_model = create_multi_task_model(units=best_params['units'],
+                                     learning_rate=best_params['learning_rate'],
+                                     dropout_rate=best_params['dropout_rate'],
+                                     l2_reg=best_params['l2_reg'])
+        else:
+            best_model = create_model(units=best_params['model__units'],
+                                  learning_rate=best_params['model__learning_rate'],
+                                  dropout_rate=best_params['model__dropout_rate'],
+                                  l2_reg=best_params['model__l2_reg'])
+        
         save_model_and_params(best_model, best_params, MODEL_FILE, PARAMS_FILE)
     
     return best_model, best_params
@@ -252,7 +255,7 @@ def plot_learning_curves(history, stock):
 
 
 # data processing
-tech_list = ['AAPL']  #'MSFT', 'AMZN'
+tech_list = ['AAPL', 'GOOG', 'MSFT', 'AMZN']
 x_train, y_train, x_test, y_test, shape, scaler = dataprocessing(tech_list)
 
 # model building
@@ -261,12 +264,13 @@ model = KerasRegressor(build_fn=create_model, verbose=0)
 MODEL_FILE = 'best_stock_model.h5'
 PARAMS_FILE = 'best_model_params.joblib'
 bayesian = False
+multi_task = True
 
-best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian)
+best_model, best_params = create_or_load_model(MODEL_FILE, PARAMS_FILE, shape, bayesian, multi_task)
 
-early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-for stock in tech_list:
+for i, stock in enumerate(tech_list):
     history = best_model.fit(x_train[stock], y_train[stock], 
                              batch_size=64, 
                              epochs=100, 
@@ -277,8 +281,8 @@ for stock in tech_list:
     # plotting
     plot_learning_curves(history, stock)
 
-    train_predictions = best_model.predict(x_train[stock])
-    test_predictions = best_model.predict(x_test[stock])
+    train_predictions = best_model.predict(x_train[stock])[i]
+    test_predictions = best_model.predict(x_test[stock])[i]
 
     def inverse_transform_data(data, scaler, shape):
         data_feature = np.zeros((len(data), shape[1]))
