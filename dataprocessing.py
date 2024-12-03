@@ -6,17 +6,12 @@ from sklearn.model_selection import train_test_split
 import yfinance as yf
 
 def add_technical_indicators(df):
-    # Add Simple Moving Average (SMA)
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    
-    # Add Relative Strength Index (RSI)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # Add returns
     df['Returns'] = df['Close'].pct_change()
     
     return df
@@ -30,7 +25,7 @@ def dataprocessing(tech_list):
         df = yf.download(stock, start, end)
         df = df.sort_index()
         df = add_technical_indicators(df)
-        stock_data[stock] = df.dropna()  # Remove any rows with NaN values
+        stock_data[stock] = df.dropna()
     
     scaler = StandardScaler()
     data = {}
@@ -55,7 +50,7 @@ def dataprocessing(tech_list):
 
         for i in range(sequence_length, len(scaled_data)):
             x_temp.append(scaled_data[i-sequence_length:i])
-            y_temp.append(scaled_data[i, 3])  # Predicting the Close price
+            y_temp.append(scaled_data[i, 3])
         
         x_temp = np.array(x_temp)
         y_temp = np.array(y_temp)

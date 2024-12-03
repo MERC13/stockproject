@@ -115,7 +115,8 @@ def create_multi_task_model(units=64, learning_rate=0.001, dropout_rate=0.2, l2_
     # Company-specific output layers
     outputs = {}
     for stock in tech_list:
-        outputs[stock] = Dense(1, name=f'output_{stock}', kernel_regularizer=l2(l2_reg))(x)
+        safe_name = stock.replace('^', '').replace('.', '_')
+        outputs[stock] = Dense(1, name=f'output_{safe_name}', kernel_regularizer=l2(l2_reg))(x)
     
     model = Model(inputs=inputs, outputs=list(outputs.values()))
     
@@ -255,7 +256,7 @@ def plot_learning_curves(history, stock):
 
 
 # data processing
-tech_list = ['AAPL', 'GOOG', 'MSFT', 'AMZN']
+tech_list = ['^DJI'] #['AAPL', 'GOOG', 'MSFT', 'AMZN']
 x_train, y_train, x_test, y_test, shape, scaler = dataprocessing(tech_list)
 
 # model building
@@ -281,8 +282,14 @@ for i, stock in enumerate(tech_list):
     # plotting
     plot_learning_curves(history, stock)
 
-    train_predictions = best_model.predict(x_train[stock])[i]
-    test_predictions = best_model.predict(x_test[stock])[i]
+    # Modify these lines
+    train_predictions = best_model.predict(x_train[stock])
+    test_predictions = best_model.predict(x_test[stock])
+
+    # If the model is multi-task, select the appropriate output
+    if multi_task:
+        train_predictions = train_predictions[:, i]
+        test_predictions = test_predictions[:, i]
 
     def inverse_transform_data(data, scaler, shape):
         data_feature = np.zeros((len(data), shape[1]))
